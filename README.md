@@ -14,28 +14,59 @@ generates a printable PDF report.
 ## Purpose
 
 - Classify a single axial, coronal or sagittal brain MRI scan across four classes.
-- Show the **full probability distribution**, not only the top guess, and flag
-  **low-confidence** predictions (below a 60% trust threshold).
+- Show the **full probability distribution**, not only the top guess. Numbers are
+  presented honestly as **model probabilities** — never as clinical confidence — and
+  flagged as **classification unavailable** below a 60% trust threshold (abstention),
+  or when the image is outside the model's 4-class label space.
 - Explain the model's reasoning with an **AI attention visualization** (Grad-CAM),
   explicitly labeled as attention — never as tumor segmentation.
 - Persist every analysis with exact model version, inputs, outputs and timing for
   full auditability.
 - Generate a professional **PDF report** per analysis.
-- Provide a training pipeline to replace the demonstration model with a
-  properly validated model.
+- Provide a training pipeline (with a single shared preprocessing pipeline and
+  calibration metrics) to replace the demonstration model with a properly
+  validated model.
 
 ## Key features
 
 | Area | Details |
 | --- | --- |
-| Prediction API | `POST /api/v1/predictions` with layered validation and rate limiting |
+| Prediction API | `POST /api/v1/predictions` with layered validation, near-blank detection and rate limiting |
 | Explainability | Grad-CAM heatmap overlay (Keras 3 compatible, raw tensor forward) |
 | Reporting | ReportLab PDF with disclaimer, probability table and attention map |
 | History | Paginated, searchable, filterable analysis log |
-| Model management | Registry scan, metadata, activation switch (admin-gated) |
+| Model management | Registry scan, metadata (incl. preprocessing version), activation switch (admin-gated) |
 | Admin analytics | Prediction distribution, model inventory, recent activity |
 | Frontend | Vite + React + TypeScript, light/dark theme, zero gradients |
 | Deployment | Docker Compose (app + MariaDB), optional CI |
+
+## Model reliability and validation
+
+The application is honest about what its model can and cannot do:
+
+- **Label space.** The model recognizes exactly four MRI classes — glioma, meningioma,
+  no_tumor, pituitary_tumor. Brain tumor types outside that space (e.g. **brain
+  metastases**) are *not* part of the label space, and an external image of such a
+  lesion can be pushed to a high nominal probability for a wrong class. The UI and PDF
+  report state the supported classes explicitly.
+- **Calibration.** Raw softmax outputs are **not calibrated**; the expected calibration
+  error (ECE) is only measurable on a labelled held-out set, which is not bundled with
+  the repository. The evaluation tooling (`training.run_evaluation`) computes ECE and
+  reliability bins, and fits a temperature-scaling temperature on a separate held-out
+  set when a `Validation/` folder is provided.
+- **Single preprocessing source of truth.** Training and inference share one canonical
+  pipeline — RGB conversion, PIL bilinear resize to the model input size, `float32`
+  scaling by `1/255` — defined in `app/core/preprocessing.py` and stamped into the
+  registry and evaluation artifacts as `preprocessing_version`.
+- **Abstention.** Results below the 60% model-probability threshold are marked
+  "classification unavailable" in the UI instead of being presented as a decision.
+- **Input validation.** Uploads are checked for extension, MIME type, size, corrupt
+  decode, minimum dimension and near-blank content before the model ever runs.
+
+> **Honesty note:** Metrics shown on the Models page are recorded at training time. The
+> bundled `Brain Tumor CNN` is a small demonstration network (train accuracy 0.98 /
+> validation accuracy 0.72 from the legacy notebook); these are **not** claimed as
+> clinical performance and have not been re-verified on this repository's data.
 
 ## Architecture
 
@@ -45,7 +76,7 @@ Browser (Vite SPA)
    ▼
 FastAPI (uvicorn) ------------► MariaDB / SQLite (SQLAlchemy ORM)
    │
-   ├── Layered validation (ext, MIME, size, decode, dimension)
+   ├── Layered validation (ext, MIME, size, decode, dimension, near-blank)
    ├── Rate limiting (per IP per minute)
    ├── ModelManager ──► Keras CNN (.h5) ──► inference + Grad-CAM
    ├── ReportGenerator (ReportLab)
@@ -54,12 +85,15 @@ FastAPI (uvicorn) ------------► MariaDB / SQLite (SQLAlchemy ORM)
 
 Components:
 
-- `backend/app/api` — routers (health, predictions, history, models, reports, admin).
-- `backend/app/services` — errors, validation, preprocessing, inference, explainability,
-  reporting, model management.
-- `backend/app/db` — SQLAlchemy models and SQLite/MariaDB session management.
+- `backend/app` — FastAPI application.
+  - `app/api` — routers (health, predictions, history, models, reports, admin).
+  - `app/core` — config, constants, logging, security, **shared preprocessing**.
+  - `app/services` — errors, validation, preprocessing, inference, explainability,
+    reporting, model management.
+  - `app/db` — SQLAlchemy models and SQLite/MariaDB session management.
 - `backend/training` — dataset loading, stratified split, augmentation, architectures,
-  training orchestrator and registry registration.
+  training orchestrator, calibration/ECE evaluation, `run_evaluation` CLI and registry
+  registration.
 - `frontend/src` — React pages, API client, theme provider, UI primitives.
 
 ## Tech stack
@@ -84,7 +118,7 @@ backend/
     main.py       FastAPI application
   models/         model weights + registry.json
   training/       dataset/training/evaluation pipeline
-  tests/          pytest suite (45 tests)
+  tests/          pytest suite (66 tests)
 frontend/
   src/
     api/          typed API client
@@ -151,37 +185,48 @@ paint to avoid flashing. The design system uses **solid colors only — no gradi
 ## Model management
 
 - Models live in `backend/models/` — each `.h5` next to the filesystem, with metadata
-  registered in `backend/models/registry.json`.
+  registered in `backend/models/registry.json` (including `preprocessing_version`,
+  honest metric buckets and calibration state).
 - On startup, `ModelManager` scans the directory, reconciles the registry against disk,
   and activates the registered default.
 - Rescan: `POST /api/v1/models/reload` (admin).
 - Switch active model: `POST /api/v1/models/{id}/activate` (admin).
 - Admin endpoints require the `X-Admin-Key` header matching `ADMIN_API_KEY`.
 
-> **Honesty note:** Metrics shown on the Models page are recorded at training time. The
-> bundled `Brain Tumor CNN` is a small demonstration network; its validation accuracy is
-> modest and is **not** claimed as clinical performance.
-
 ## Training a replacement model
 
 The dataset (`Training/`, `Testing/` class folders) is not distributed with this repo.
-When available, use the pipeline:
+When available, use the pipeline — it uses the exact same canonical preprocessing as
+inference and records calibration metrics:
 
 ```bash
 cd backend
 
-python -m training.train --data-dir /path/to/Training \
+python -m training.train --data-dir /path/to/dataset \
   --arch custom_cnn --epochs 40 --batch-size 32 \
   --register --set-active
 ```
 
 Architectures: `custom_cnn`, `efficientnet_b0`, `resnet50`, `mobilenet_v2`,
-`densenet121`. The orchestrator writes honest metrics to the registry; it never fakes
-numbers. Evaluate with:
+`densenet121`. The orchestrator writes honest metrics (including ECE and a temperature
+fit from the held-out validation split) to the registry; it never fakes numbers.
+
+Evaluate any trained artifact against a labelled `Testing/` set with the dedicated CLI,
+which writes a comparable JSON artifact under `reports/model-evaluation/`:
 
 ```bash
-python -m training.evaluate --data-dir /path/to/Testing
+cd backend
+
+python -m training.run_evaluation \
+  --model-path models/brain_tumor.h5 \
+  --data-root /path/to/dataset \
+  --input-size 64 \
+  --output ../reports/model-evaluation/ev-1.0.0.json \
+  --label "v1.0.0 held-out"
 ```
+
+If a `Validation/` folder is present it is used to fit a temperature before reporting
+the post-calibration ECE; otherwise only the uncalibrated ECE is reported.
 
 ## API reference (all under `/api/v1`)
 
@@ -195,7 +240,7 @@ python -m training.evaluate --data-dir /path/to/Testing
 | GET | `/history` | Paginated history (`page`, `page_size`, `search`, `prediction`, `date_from`, `date_to`) |
 | GET | `/history/{analysis_id}` | Single history item |
 | GET | `/models` | Registry models + active model |
-| GET | `/models/{model_id}` | Model metadata incl. metrics |
+| GET | `/models/{model_id}` | Model metadata incl. metrics + preprocessing version |
 | POST | `/models/{model_id}/activate` | Set active model (admin) |
 | POST | `/models/reload` | Rescan model dir (admin) |
 | GET | `/reports` | Paginated report list |
@@ -203,6 +248,11 @@ python -m training.evaluate --data-dir /path/to/Testing
 | GET | `/reports/{report_id}` | Report metadata |
 | GET | `/reports/{report_id}/download` | Report PDF |
 | GET | `/admin/analytics` | Admin analytics (admin) |
+
+`POST /predictions` responds with the full class probabilities, `low_confidence`
+(abstention flag), `supported_classes` (the model's label space), the model identity and
+`model.processing_time_ms`; probabilities are labeled in the UI as **model probability**,
+never confidence.
 
 ## Configuration (environment variables)
 
@@ -244,9 +294,14 @@ API client at the backend (see the Settings page).
 ## Known limitations
 
 - The bundled model is a **demonstration network**; it is not clinically validated.
+- Its **label space is exactly four classes**; other tumor types (metastases, etc.) are
+  unrecognized and can be misclassified with a high nominal probability.
+- Softmax probabilities are **uncalibrated**; treat them as relative scores, not
+  probabilities of ground truth.
 - Grad-CAM is an **explanation aid**, not a tumor segmentation or diagnosis.
 - Cross-scanner generalization has not been verified.
-- The original training dataset is not included in this repository.
+- The original training dataset is not included in this repository, so held-out
+  metrics cannot be reproduced here.
 - Reports do not replace professional radiology reports.
 
 ## Security notes

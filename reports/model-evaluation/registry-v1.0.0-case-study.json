@@ -1,0 +1,36 @@
+{
+  "model": {
+    "name": "Brain Tumor CNN",
+    "version": "1.0.0",
+    "preprocessing_version": "1.0.0-255-bilinear-rgb",
+    "input_size": 64,
+    "supported_classes": ["glioma", "meningioma", "no_tumor", "pituitary_tumor"],
+    "calibration_applied": false
+  },
+  "dataset": "legacy Training/Testing split (2870 train / 393 test) recorded at training time in the legacy notebook; original images not distributed with this repository",
+  "recorded_training_metrics": {
+    "source": "recorded in the legacy notebook at training time, not independently re-verified",
+    "train": { "accuracy": 0.9847, "loss": 0.0505 },
+    "validation": { "accuracy": 0.7176, "loss": 4.0798 },
+    "held_out_test": null,
+    "external": null
+  },
+  "case_study": {
+    "input": "Hirnmetastase_MRT-T1_KM.jpg (T1-weighted contrast-enhanced brain MRI showing a metastasis)",
+    "observed_model_probability": { "top_class": "no_tumor", "value": 0.9972 },
+    "verdict": "Out of label space. A brain metastasis is not one of the 4 supported classes; the softmax is forced to normalize over them for any input, so a high nominal No Tumor probability is not evidence of absence of tumor.",
+    "preprocessing_match": "Inference reproduces the legacy training preprocessing (RGB, PIL bilinear 64x64, float32/255); no drift found.",
+    "calibration": {
+      "measured_ece": null,
+      "reason": "ECE requires a labelled held-out set, which is not distributed with this repository",
+      "honest_labeling": "Results are surfaced as 'model probability' (never confidence) in UI, PDF and API"
+    }
+  },
+  "how_to_measure": "python -m training.run_evaluation --model-path backend/models/brain_tumor.h5 --data-root /path/to/labelled/dataset --input-size 64 --output reports/model-evaluation/ev-1.0.0.json --label 'v1.0.0 held-out'",
+  "abstention": "Results below a 60% model-probability threshold are marked 'Classification unavailable' in the UI instead of being presented as a decision.",
+  "notes": [
+    "No OOD detector is present: in-label-space but unusual images can still receive a high nominal probability.",
+    "Temperature scaling is not applicable because the inference path returns post-softmax probabilities rather than raw logits (documented in training/evaluate.py).",
+    "Fix requires retraining with additional classes or an out-of-distribution rejection head, followed by measured ECE."
+  ]
+}
