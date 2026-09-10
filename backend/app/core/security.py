@@ -56,7 +56,11 @@ class SecurityHeadersMiddleware:
 
 
 class ClientIPRateLimiter:
-    """In-memory sliding-window rate limiter keyed by client IP."""
+    """In-memory sliding-window rate limiter keyed by client IP.
+
+    Not suitable for multi-process production deployments; replace with a
+    shared store (Redis) when scaling horizontally.
+    """
 
     def __init__(self, limit_per_minute: int, window_seconds: int = 60) -> None:
         self.limit = limit_per_minute
@@ -80,3 +84,47 @@ class ClientIPRateLimiter:
             self._requests.clear()
         else:
             self._requests.pop(client_ip, None)
+
+
+# Shared rate limiters used across routes.
+_health_limiter: ClientIPRateLimiter | None = None
+_prediction_limiter: ClientIPRateLimiter | None = None
+_report_limiter: ClientIPRateLimiter | None = None
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def rate_limit_dependency(limiter: ClientIPRateLimiter, message: str):
+    """Build a FastAPI dependency that enforces a per-IP rate limit."""
+
+    async def dependency(request: Request) -> None:
+        if not limiter.allow(_client_ip(request)):
+            raise HTTPException(status_code=429, detail=message)
+
+    return dependency
+
+
+def health_limiter() -> ClientIPRateLimiter:
+    global _health_limiter
+    if _health_limiter is None:
+        _health_limiter = ClientIPRateLimiter(settings.health_rate_limit)
+    return _health_limiter
+
+
+def prediction_limiter() -> ClientIPRateLimiter:
+    global _prediction_limiter
+    if _prediction_limiter is None:
+        _prediction_limiter = ClientIPRateLimiter(settings.prediction_rate_limit)
+    return _prediction_limiter
+
+
+def report_limiter() -> ClientIPRateLimiter:
+    global _report_limiter
+    if _report_limiter is None:
+        _report_limiter = ClientIPRateLimiter(settings.report_rate_limit)
+    return _report_limiter
