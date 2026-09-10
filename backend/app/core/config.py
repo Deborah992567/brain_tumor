@@ -69,6 +69,11 @@ class Settings(BaseSettings):
 
     # Reporting
     report_company_name: str = "Brain Tumor AI"
+    medical_disclaimer: str = (
+        "This AI-generated result is intended for research and educational "
+        "assistance only and does not constitute a medical diagnosis. Always "
+        "consult a qualified healthcare professional for medical interpretation."
+    )
     log_level: str = "INFO"
 
     @field_validator(
