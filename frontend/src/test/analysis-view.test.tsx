@@ -22,10 +22,12 @@ const result: PredictionResponse = {
     architecture: "Custom CNN",
     input_size: 64,
     dataset_version: "Demo",
+    preprocessing_version: "1.0.0-255-bilinear-rgb",
   },
   processing_time_ms: 172,
   created_at: "2026-01-01T00:00:00Z",
   report_available: false,
+  supported_classes: ["glioma", "meningioma", "no_tumor", "pituitary_tumor"],
   links: {
     image: "/media/img.png",
     gradcam: "/media/gradcam.png",
@@ -41,7 +43,7 @@ describe("AnalysisView", () => {
     );
 
     expect(screen.getAllByText("No Tumor").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Confidence 99.7%")).toBeInTheDocument();
+    expect(screen.getByText("Model probability 99.7%")).toBeInTheDocument();
     expect(screen.getAllByText("Glioma").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Meningioma").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Pituitary Tumor")).toBeInTheDocument();
@@ -58,13 +60,13 @@ describe("AnalysisView", () => {
     expect(screen.getByText(/does not constitute a medical diagnosis/i)).toBeInTheDocument();
   });
 
-  it("shows a low-confidence warning when the threshold is missed", () => {
+  it("shows an abstention notice when the threshold is missed", () => {
     const low: PredictionResponse = { ...result, confidence: 0.52, low_confidence: true };
     render(
       <ToastProvider>
         <AnalysisView result={low} />
       </ToastProvider>,
     );
-    expect(screen.getByText("Low confidence")).toBeInTheDocument();
+    expect(screen.getByText("Classification unavailable.")).toBeInTheDocument();
   });
 });

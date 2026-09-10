@@ -47,12 +47,15 @@ export function Research() {
       </section>
 
       <section className="card section">
-        <h2 className="card-title mb-3">Confidence and trust threshold</h2>
+        <h2 className="card-title mb-3">Model probability and trust threshold</h2>
         <p className="text-sm text-muted">
-          Each prediction carries a confidence score. When the top probability falls below{" "}
-          <strong>60%</strong>, the analysis is flagged <em>low-confidence</em> and a
-          caution note is attached. A low-confidence result means the model’s decision is not
-          decisive and should be treated with additional care — never as a diagnosis.
+          Each result carries a <strong>model probability</strong> — the softmax output for the
+          predicted class. When the top probability falls below <strong>60%</strong>, the analysis
+          is flagged <em>unsupported / classification unavailable</em> and a caution note is
+          attached. The model’s probabilities are not calibrated: a high value does not imply
+          medical certainty, and an out-of-distribution image (for example a tumor type outside
+          the four supported classes) can still get a high nominal probability. Never treat any
+          result as a diagnosis.
         </p>
       </section>
 
@@ -70,12 +73,12 @@ export function Research() {
         <h2 className="card-title mb-3">Methodology</h2>
         <ul className="list">
           <li>
-            Images are resized to the model’s expected input resolution and normalized before
-            inference.
+            Images are preprocessed with a single shared pipeline (RGB, bilinear resize,
+            <code> 1/255</code>) that is used identically by training and inference.
           </li>
           <li>
-            The pipeline enforces file-level validation: extension, MIME type, size limit, and
-            decode checks with clear error messages.
+            The pipeline enforces file-level validation: extension, MIME type, size limit,
+            near-blank detection, and decode checks with clear error messages.
           </li>
           <li>
             Every analysis is persisted with the exact model version, full probability vector,

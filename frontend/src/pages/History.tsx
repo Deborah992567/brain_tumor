@@ -144,7 +144,7 @@ export function History() {
                 <tr>
                   <th>Image</th>
                   <th>Prediction</th>
-                  <th>Confidence</th>
+                  <th>Model probability</th>
                   <th>Model</th>
                   <th>When</th>
                   <th />

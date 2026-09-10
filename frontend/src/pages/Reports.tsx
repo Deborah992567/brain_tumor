@@ -79,7 +79,7 @@ export function Reports() {
                 <tr>
                   <th>Image</th>
                   <th>Prediction</th>
-                  <th>Confidence</th>
+                  <th>Model probability</th>
                   <th>Model</th>
                   <th>Size</th>
                   <th>Generated</th>

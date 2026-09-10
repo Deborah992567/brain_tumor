@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { ModelInfo, ModelListResponse } from "../api/types";
+import { trainAccuracy, validationAccuracy } from "../api/types";
 import { Icon } from "../components/Icon";
 import { Modal } from "../components/Modal";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/States";
@@ -102,8 +103,8 @@ export function Models() {
               </thead>
               <tbody>
                 {data.models.map((model) => {
-                  const trainAcc = metricPct(model, "train_accuracy");
-                  const valAcc = metricPct(model, "val_accuracy");
+                  const trainAcc = trainAccuracy(model.metrics);
+                  const valAcc = validationAccuracy(model.metrics);
                   return (
                     <tr key={model.id} className={model.is_active ? "model-active" : undefined}>
                       <td>
@@ -191,15 +192,18 @@ export function Models() {
 }
 
 function ActiveModelSummary({ model }: { model: ModelInfo }) {
-  const metrics = useMemo(
+  const nestedNumeric = useMemo(
     () =>
       model.metrics && typeof model.metrics === "object"
         ? Object.entries(model.metrics).filter(
-            ([key, value]) => typeof value === "number" && key !== "num_classes",
+            ([key, value]) =>
+              typeof value === "number" && key !== "num_classes",
           )
         : [],
     [model.metrics],
   );
+  const trainAcc = trainAccuracy(model.metrics);
+  const valAcc = validationAccuracy(model.metrics);
 
   return (
     <section className="card section">
@@ -209,18 +213,32 @@ function ActiveModelSummary({ model }: { model: ModelInfo }) {
         <Metric label="Architecture" value={model.architecture} />
         <Metric label="Input size" value={`${model.input_size}×${model.input_size} px`} />
         <Metric label="Dataset version" value={model.dataset_version || "—"} />
+        <Metric label="Preprocessing" value={model.preprocessing_version || "—"} />
         <Metric label="Registered" value={fmtDateTime(model.created_at)} />
         <Metric label="Status" value={model.status} />
+        <Metric label="Training accuracy" value={trainAcc != null ? fmtPercent(trainAcc) : "—"} />
+        <Metric label="Validation accuracy" value={valAcc != null ? fmtPercent(valAcc) : "—"} />
       </div>
       {model.description && <p className="text-sm text-muted mt-3">{model.description}</p>}
-      {metrics.length > 0 && (
+      {nestedNumeric.length > 0 && (
         <div className="card section" style={{ marginTop: 16 }}>
           <h3 className="section-title text-sm">Training-time metrics</h3>
           <div className="grid grid-2">
-            {metrics.map(([key, value]) => (
+            {nestedNumeric.map(([key, value]) => (
               <Metric key={key} label={key} value={fmtPercent(value as number)} />
             ))}
           </div>
+        </div>
+      )}
+      {model.calibration && (
+        <div className="alert alert-info mt-3" role="note">
+          Calibration applied: {model.calibration.applied ? "yes" : "no"}
+          {typeof model.calibration.temperature === "number" ? (
+            <> · temperature {model.calibration.temperature}</>
+          ) : null}
+          {typeof model.calibration.ece_after === "number" ? (
+            <> · ECE after {model.calibration.ece_after}</>
+          ) : null}
         </div>
       )}
     </section>
@@ -228,13 +246,8 @@ function ActiveModelSummary({ model }: { model: ModelInfo }) {
 }
 
 function ModelDetailModal({ model, onClose }: { model: ModelInfo; onClose: () => void }) {
-  const metrics = useMemo(
-    () =>
-      model.metrics && typeof model.metrics === "object"
-        ? Object.entries(model.metrics)
-        : [],
-    [model.metrics],
-  );
+  const trainAcc = trainAccuracy(model.metrics);
+  const valAcc = validationAccuracy(model.metrics);
 
   return (
     <Modal title={`${model.name} v${model.version}`} onClose={onClose}>
@@ -242,26 +255,23 @@ function ModelDetailModal({ model, onClose }: { model: ModelInfo; onClose: () =>
         <Metric label="Architecture" value={model.architecture} />
         <Metric label="Input size" value={`${model.input_size}px`} />
         <Metric label="Dataset" value={model.dataset_version || "—"} />
+        <Metric label="Preprocessing" value={model.preprocessing_version || "—"} />
         <Metric label="Status" value={model.status} />
         <Metric label="File" value={model.file_path} />
         <Metric label="Registered" value={fmtDateTime(model.created_at)} />
+        <Metric label="Training accuracy" value={trainAcc != null ? fmtPercent(trainAcc) : "—"} />
+        <Metric label="Validation accuracy" value={valAcc != null ? fmtPercent(valAcc) : "—"} />
       </div>
       {model.description && <p className="text-sm text-muted mt-3">{model.description}</p>}
-      {metrics.length > 0 && (
-        <div className="mt-4">
-          <h3 className="section-title text-sm">Metrics</h3>
-          <div className="grid grid-2">
-            {metrics.map(([key, value]) => (
-              <Metric
-                key={key}
-                label={key}
-                value={typeof value === "number" ? fmtPercent(value) : String(value)}
-              />
-            ))}
-          </div>
-          <p className="text-xs text-faint mt-3">{HONEST_HINT}</p>
+      {model.calibration && (
+        <div className="alert alert-info mt-3" role="note">
+          Calibration applied: {model.calibration.applied ? "yes" : "no"}
+          {typeof model.calibration.temperature === "number" ? (
+            <> · temperature {model.calibration.temperature}</>
+          ) : null}
         </div>
       )}
+      <p className="text-xs text-faint mt-3">{HONEST_HINT}</p>
     </Modal>
   );
 }
@@ -273,14 +283,4 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div style={{ fontWeight: 550, fontSize: 14, wordBreak: "break-word" }}>{value}</div>
     </div>
   );
-}
-
-function metricPct(model: ModelInfo, key: string): number | null {
-  const value = model.metrics?.[key];
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const n = parseFloat(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
 }

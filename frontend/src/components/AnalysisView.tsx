@@ -86,16 +86,41 @@ export function AnalysisView({
       <section className="card section" aria-label="Prediction result">
         <div className="flex-between mb-3">
           <h2 className="card-title">Prediction</h2>
-          {result.low_confidence && (
-            <span className="badge badge-warning">Low confidence</span>
-          )}
         </div>
 
-        <div className="prediction-box" style={result.low_confidence ? { borderLeftColor: "var(--warning)" } : undefined}>
-          <div className="prediction-label">{result.label}</div>
-          <div className="confidence-value">
-            Confidence {fmtPercent(result.confidence)}
+        {result.low_confidence && (
+          <div className="alert alert-warning mb-3" role="note">
+            <strong>Classification unavailable.</strong> The model probability is
+            below the reliability threshold, so this result should not be used to
+            draw a conclusion. Treat the class below as indicative only.
           </div>
+        )}
+
+        <div className="prediction-box" style={result.low_confidence ? { borderLeftColor: "var(--warning)" } : undefined}>
+          <div className="prediction-label">
+            {result.low_confidence ? "Uncertain result" : result.label}
+          </div>
+          <div className="confidence-value">
+            Model probability {fmtPercent(result.confidence)}
+          </div>
+        </div>
+
+        <div className="alert alert-info mt-3" role="note">
+          {result.supported_classes && result.supported_classes.length > 0 ? (
+            <>
+              This model recognizes exactly:{" "}
+              {result.supported_classes.map((key: string) => CLASS_LABELS[key as keyof typeof CLASS_LABELS] ?? key).join(", ")}.
+              {" "}Other tumor types are outside its label space, and results for
+              such images are unreliable even when the probability is high.
+            </>
+          ) : (
+            <>
+              This model recognizes exactly:{" "}
+              {CLASS_ORDER.map((key) => CLASS_LABELS[key]).join(", ")}. Other tumor
+              types are outside its label space, and results for such images are
+              unreliable even when the probability is high.
+            </>
+          )}
         </div>
 
         <div className="mt-5">
@@ -120,7 +145,10 @@ export function AnalysisView({
         <div className="grid grid-2" style={{ marginTop: 24 }}>
           <InfoRow label="Analysis ID" value={result.analysis_id} />
           <InfoRow label="Analyzed at" value={fmtDateTime(result.created_at)} />
-          <InfoRow label="Model" value={`${result.model.name} v${result.model.version}`} />
+          <InfoRow
+            label="Model"
+            value={`${result.model.name} v${result.model.version}`}
+          />
           <InfoRow label="Inference time" value={fmtDuration(result.processing_time_ms)} />
         </div>
 

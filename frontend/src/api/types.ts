@@ -20,6 +20,7 @@ export interface ModelMeta {
   architecture: string;
   input_size: number;
   dataset_version: string;
+  preprocessing_version?: string;
 }
 
 export interface PredictionLinks {
@@ -42,6 +43,7 @@ export interface PredictionResponse {
   note?: string | null;
   warnings?: string[];
   filename?: string | null;
+  supported_classes?: string[];
 }
 
 export interface HistoryItem {
@@ -76,6 +78,8 @@ export interface ModelInfo {
   dataset_version: string;
   training_datetime: string | null;
   metrics: Record<string, unknown>;
+  preprocessing_version?: string;
+  calibration?: Record<string, unknown>;
   status: string;
   description: string;
   is_active: boolean;
@@ -184,6 +188,33 @@ export function metricNumber(metrics: Record<string, unknown>, key: string): num
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function nestedMetric(
+  bucket: unknown,
+  keys: string[],
+): number | null {
+  if (!bucket || typeof bucket !== "object") return null;
+  const record = bucket as Record<string, unknown>;
+  for (const key of keys) {
+    const n = metricNumber(record, key);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+export function trainAccuracy(metrics: Record<string, unknown>): number | null {
+  return (
+    metricNumber(metrics, "train_accuracy") ??
+    nestedMetric(metrics?.train, ["accuracy", "acc"])
+  );
+}
+
+export function validationAccuracy(metrics: Record<string, unknown>): number | null {
+  return (
+    metricNumber(metrics, "val_accuracy") ??
+    nestedMetric(metrics?.validation, ["accuracy", "acc"])
+  );
 }
 
 export const DISCLAIMER_TEXT =

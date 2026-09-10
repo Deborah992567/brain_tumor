@@ -100,7 +100,7 @@ export function Dashboard() {
                         <div className="text-sm" style={{ fontWeight: 600 }}>
                           {fmtPercent(item.confidence)}
                         </div>
-                        <div className="text-xs text-faint">confidence</div>
+                        <div className="text-xs text-faint">model probability</div>
                       </div>
                     </Link>
                   </li>

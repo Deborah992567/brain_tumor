@@ -55,9 +55,9 @@ export function NewAnalysis() {
     const elapsed = performance.now() - started;
     const note = result.note ? ` ${result.note}` : "";
     toast(
-      `Analysis complete — ${result.label} at ${(result.confidence * 100).toFixed(1)}%. (${fmtDuration(
+      `Analysis complete — ${result.label} (model probability ${(result.confidence * 100).toFixed(1)}%). (${fmtDuration(
         elapsed,
-      )})${note}`,
+      )})${result.low_confidence ? " Classification may be unavailable - check the result." : note}`,
       "success",
     );
     navigate(`/analysis/${result.analysis_id}`);
