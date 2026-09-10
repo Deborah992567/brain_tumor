@@ -9,6 +9,7 @@ class ModelMeta(BaseModel):
     architecture: str
     input_size: int
     dataset_version: str = ""
+    preprocessing_version: str = ""
 
 
 class PredictionLinks(BaseModel):
@@ -28,6 +29,7 @@ class PredictionResponse(BaseModel):
     created_at: str
     report_available: bool = False
     links: PredictionLinks = PredictionLinks()
+    supported_classes: list[str] = []
 
 
 class ReportInfo(BaseModel):

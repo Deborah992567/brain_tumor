@@ -17,6 +17,7 @@ router = APIRouter(tags=["models"])
 
 
 def _to_info(record) -> ModelInfo:
+    metrics = json.loads(record.metrics_json or "{}")
     return ModelInfo(
         id=record.id,
         name=record.name,
@@ -30,7 +31,9 @@ def _to_info(record) -> ModelInfo:
             if record.training_datetime
             else None
         ),
-        metrics=json.loads(record.metrics_json or "{}"),
+        metrics=metrics,
+        preprocessing_version=metrics.get("preprocessing_version"),
+        calibration=metrics.get("calibration"),
         status=record.status,
         description=record.description,
         is_active=record.is_active,

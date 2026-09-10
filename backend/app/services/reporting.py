@@ -1,10 +1,10 @@
 """Professional PDF report generation.
 
 Reports are titled *AI-Assisted Brain MRI Analysis Report*. They present the
-AI prediction with its confidence, the full probability distribution, the
-model + version that produced it, the uploaded MRI, the AI attention
-visualization and the medical disclaimer. They are explicitly NOT medical
-diagnoses.
+AI prediction with its **model probability** (never framed as clinical
+confidence), the full probability distribution, the model + version that
+produced it, the uploaded MRI, the AI attention visualization, the supported
+classes and the medical disclaimer. They are explicitly NOT medical diagnoses.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from reportlab.platypus import (
 )
 
 from app.core.config import settings
-from app.core.constants import display_label
+from app.core.constants import CLASSES, CONFIDENCE_LOW_THRESHOLD, display_label
 from app.db.models import AnalysisRecord
 from app.services.errors import ReportGenerationError
 
@@ -165,7 +165,7 @@ class ReportGenerator:
             ["Date / time", _iso_z(analysis.created_at)],
             ["Input file", analysis.filename],
             ["Prediction", display_label(analysis.prediction_label)],
-            ["Confidence", f"{analysis.confidence:.2%}"],
+            ["Model probability", f"{analysis.confidence:.2%}"],
             ["Model", f"{analysis.model_name} v{analysis.model_version}"],
             ["Processing time", f"{analysis.processing_time_ms or 0} ms"],
         ]
@@ -212,6 +212,28 @@ class ReportGenerator:
         )
         story.append(Paragraph("Probability distribution", styles["section"]))
         story.append(prob_table)
+        story.append(
+            Paragraph(
+                "Values are raw model (softmax) probabilities and are not calibrated; "
+                "consider them relative scores, not clinical probabilities.",
+                styles["disclaimer"],
+            )
+        )
+        story.append(Spacer(1, 2 * mm))
+
+        # Model scope / label space
+        story.append(Paragraph("Model scope and limitations", styles["section"]))
+        story.append(
+            Paragraph(
+                "The model recognizes exactly these four classes: "
+                + ", ".join(display_label(c) for c in CLASSES)
+                + ". Tumor types outside this label space (for example brain "
+                "metastases) are not recognized, and an out-of-distribution image "
+                "can still receive a high nominal probability for a wrong class.",
+                styles["body"],
+            )
+        )
+        story.append(Spacer(1, 2 * mm))
 
         # Images: MRI + attention overlay
         story.append(Paragraph("Imaging", styles["section"]))
@@ -242,14 +264,16 @@ class ReportGenerator:
 
         story.append(Spacer(1, 6 * mm))
 
-        # Interpretation guidance (low confidence)
+        # Interpretation guidance (low confidence / abstention)
         if analysis.low_confidence:
             story.append(Paragraph("Uncertainty notice", styles["section"]))
             story.append(
                 Paragraph(
-                    "The model confidence for this analysis is below the application "
-                    "threshold. Low-confidence predictions should prompt additional "
-                    "review and must not be treated as definitive.",
+                    f"Classification is flagged as unavailable: the model probability "
+                    f"({analysis.confidence:.1%}) is below the "
+                    f"{CONFIDENCE_LOW_THRESHOLD:.0%} reliability threshold. This "
+                    "result should not be used to draw a conclusion and must not "
+                    "be treated as definitive.",
                     styles["body"],
                 )
             )

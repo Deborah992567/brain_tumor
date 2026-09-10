@@ -93,6 +93,7 @@ class ModelRecord(Base):
     def to_dict(self) -> dict:
         import json
 
+        metrics = json.loads(self.metrics_json or "{}")
         return {
             "id": self.id,
             "name": self.name,
@@ -104,7 +105,9 @@ class ModelRecord(Base):
             "training_datetime": (
                 self.training_datetime.isoformat() + "Z" if self.training_datetime else None
             ),
-            "metrics": json.loads(self.metrics_json or "{}"),
+            "metrics": metrics,
+            "preprocessing_version": metrics.get("preprocessing_version"),
+            "calibration": metrics.get("calibration"),
             "status": self.status,
             "description": self.description,
             "is_active": self.is_active,

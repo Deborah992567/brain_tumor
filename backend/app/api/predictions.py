@@ -44,6 +44,9 @@ def _build_links(analysis_id: str) -> PredictionLinks:
 
 
 def _to_response(db, model) -> PredictionDetailResponse:
+    from app.core.constants import CLASSES, CONFIDENCE_LOW_THRESHOLD
+    from app.core.preprocessing import PREPROCESSING_VERSION
+
     probabilities = json.loads(model.probabilities_json or "{}")
     model_meta = ModelMeta(
         name=model.model_name,
@@ -55,13 +58,31 @@ def _to_response(db, model) -> PredictionDetailResponse:
     from app.repositories.models import ModelRepository
 
     record = ModelRepository(db).get_by_name_version(model.model_name, model.model_version)
+    preprocessing_version = PREPROCESSING_VERSION
     if record is not None:
+        stored_meta = json.loads(record.metrics_json or "{}")
+        stored_preprocessing = stored_meta.get("preprocessing_version")
+        preprocessing_version = stored_preprocessing or PREPROCESSING_VERSION
         model_meta = ModelMeta(
             name=record.name,
             version=record.version,
             architecture=record.architecture,
             input_size=record.input_size,
             dataset_version=record.dataset_version,
+            preprocessing_version=preprocessing_version,
+        )
+
+    note = (
+        "This AI-generated result is intended for research and educational "
+        "assistance only and does not constitute a medical diagnosis. The "
+        "probabilities are uncalibrated model outputs, not clinical confidence, "
+        "and this model recognizes only the supported classes listed here."
+    )
+    if model.low_confidence:
+        note = (
+            f"Classification unavailable: the model probability ({model.confidence:.1%}) "
+            f"is below the {CONFIDENCE_LOW_THRESHOLD:.0%} reliability threshold. "
+            + note
         )
 
     return PredictionDetailResponse(
@@ -72,15 +93,13 @@ def _to_response(db, model) -> PredictionDetailResponse:
         low_confidence=model.low_confidence,
         probabilities=probabilities,
         model=model_meta,
+        supported_classes=list(CLASSES),
         processing_time_ms=model.processing_time_ms,
         created_at=model.created_at.isoformat() + "Z",
         report_available=model.report is not None,
         filename=model.filename,
         warnings=[],
-        note=(
-            "This AI-generated result is intended for research and educational "
-            "assistance only and does not constitute a medical diagnosis."
-        ),
+        note=note,
         report=(
             ReportInfo(id=model.report.id, available=True)
             if model.report is not None

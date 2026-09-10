@@ -103,9 +103,11 @@ def validate_upload(filename: str, file_bytes: bytes) -> ValidatedFile:
             "The image is low resolution; analysis accuracy may be reduced."
         )
 
-    # Basic suitability check: reject effectively blank frames.
+    # Basic suitability check: reject effectively blank frames. The downscale
+    # uses a smoothing (LANCZOS) resample so striped/fine textures are averaged
+    # rather than aliased to a near-constant frame by nearest-neighbour pick.
     try:
-        gray = image.convert("L").resize((32, 32))
+        gray = image.convert("L").resize((32, 32), Image.Resampling.LANCZOS)
         import numpy as np
 
         if np.asarray(gray, dtype=np.float32).std() < MIN_DETECTABLE_ACTIVITY:

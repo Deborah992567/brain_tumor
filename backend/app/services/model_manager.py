@@ -82,6 +82,12 @@ class ModelManager:
             return
 
         for spec in data.get("models", []):
+            metrics_doc = dict(spec.get("metrics", {}))
+            if spec.get("preprocessing_version"):
+                metrics_doc["preprocessing_version"] = spec["preprocessing_version"]
+            if spec.get("calibration") is not None:
+                metrics_doc["calibration"] = spec["calibration"]
+
             existing = repo.get_by_name_version(spec["name"], spec["version"])
             if existing is None:
                 record = ModelRecord(
@@ -92,17 +98,17 @@ class ModelManager:
                     input_size=int(spec.get("input_size", 64)),
                     dataset_version=spec.get("dataset_version", ""),
                     training_datetime=_datetime_parse(spec.get("training_datetime")),
-                    metrics_json=json.dumps(spec.get("metrics", {})),
+                    metrics_json=json.dumps(metrics_doc),
                     status=spec.get("status", "ready"),
                     description=spec.get("description", ""),
                     is_active=bool(spec.get("is_active", False)),
                 )
                 repo.create(record)
             else:
-                existing.metrics_json = json.dumps(spec.get("metrics", {}))
+                existing.metrics_json = json.dumps(metrics_doc)
                 existing.status = spec.get("status", "ready")
                 existing.is_active = bool(spec.get("is_active", False))
-                if spec.get("metrics") != {}:
+                if metrics_doc != {}:
                     db.add(existing)
                 db.commit()
 
