@@ -9,6 +9,15 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
 
+# Ensure required data directories exist before the engine touches disk.
+for _dir in (
+    settings.data_dir,
+    settings.upload_dir,
+    settings.gradcam_dir,
+    settings.report_dir,
+):
+    _dir.mkdir(parents=True, exist_ok=True)
+
 connect_args = {}
 if settings.sqlite_database:
     connect_args["check_same_thread"] = False
