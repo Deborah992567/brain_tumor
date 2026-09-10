@@ -43,6 +43,25 @@ def test_report_metadata_endpoint(test_client, sample_mri_bytes):
     assert meta.json()["id"] == report_id
 
 
+def test_report_list_endpoint(test_client, sample_mri_bytes, db_session):
+    analysis_id = _analyze(test_client, sample_mri_bytes)
+    test_client.post("/api/v1/reports", json={"analysis_id": analysis_id})
+
+    listing = test_client.get("/api/v1/reports")
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body["total"] >= 1
+    item = next(
+        (i for i in body["items"] if i["analysis_id"] == analysis_id),
+        None,
+    )
+    assert item is not None
+    assert item["prediction"] == "no_tumor"
+    assert isinstance(item["confidence"], float)
+    assert item["filename"] == "mri.jpg"
+    assert item["download_url"].endswith("/download")
+
+
 def test_report_for_missing_analysis_404(test_client):
     response = test_client.post("/api/v1/reports", json={"analysis_id": "nope"})
     assert response.status_code == 404
