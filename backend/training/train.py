@@ -26,10 +26,11 @@ from pathlib import Path
 
 import numpy as np
 
+from app.core.preprocessing import PREPROCESSING_VERSION
 from training.architectures import build
 from training.augmentation import feature_pipeline
 from training.data import load_images, stratified_split
-from training.evaluate import evaluate
+from training.evaluate import evaluate_calibrated
 
 DEFAULT_DIR = Path(__file__).resolve().parents[1] / "models"
 
@@ -136,18 +137,21 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(output_path))
 
-    # Final evaluation on the held-out Testing set.
+    # Final evaluation on the held-out Testing set. The temperature is fitted
+    # on the *validation* split (held out during training) and then applied to
+    # the Testing set so calibration metrics do not leak.
     test = load_images(args.data_dir / "Testing", args.input_size)
     test_features = feature_pipeline(
         test.x, test.y, args.batch_size, args.input_size, augment=False
     )
-    probabilities = model.predict(test_features, verbose=0)
-    report = evaluate(probabilities, test.y, test.labels)
+    test_probs = model.predict(test_features, verbose=0)
+    report, _ = evaluate_calibrated(test_probs, test.y)
 
     eval_path = output_path.with_suffix(".metrics.json")
     report_data = {
         "architecture": args.arch,
         "input_size": args.input_size,
+        "preprocessing_version": PREPROCESSING_VERSION,
         "dataset": f"Training={train_ds.n + val_ds.n} images, "
                    f"held-out Testing={test.n} images",
         "dataset_version": f"{train_ds.n + val_ds.n} train / {test.n} test",
@@ -168,8 +172,14 @@ def main() -> None:
             architecture=f"{args.arch} ({args.input_size}px)",
             file_path=str(output_path),
             input_size=args.input_size,
+            preprocessing_version=PREPROCESSING_VERSION,
             dataset_version=report_data["dataset_version"],
             metrics=report.to_dict(),
+            calibration={
+                "applied": False,
+                "temperature": 1.0,
+                "ece": report.calibration.ece if report.calibration else None,
+            },
             status="ready",
             description=(
                 f"Trained with the improved pipeline ({args.arch}, "

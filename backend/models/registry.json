@@ -6,16 +6,30 @@
       "architecture": "Custom CNN (Conv2D x2 + MaxPool + Dense)",
       "file_path": "brain_tumor.h5",
       "input_size": 64,
+      "preprocessing_version": "1.0.0-255-bilinear-rgb",
       "dataset_version": "legacy Training/Testing (2870 train, 393 test images, 4 classes)",
       "training_datetime": null,
       "metrics": {
-        "source": "training-time (recorded in legacy notebook, not independently re-verified)",
-        "train_accuracy": 0.9847,
-        "val_accuracy": 0.7176,
-        "val_loss": 4.0798
+        "source": "recorded at training time in the legacy notebook; not independently re-verified on this repository's data",
+        "train": {
+          "accuracy": 0.9847,
+          "loss": 0.0505
+        },
+        "validation": {
+          "accuracy": 0.7176,
+          "loss": 4.0798
+        },
+        "held_out_test": null,
+        "external": null
+      },
+      "calibration": {
+        "applied": false,
+        "temperature": 1.0,
+        "ece_after": null,
+        "note": "Raw softmax probabilities are uncalibrated. The expected calibration error (ECE) can only be measured on a labelled held-out set, which is not present in this repository."
       },
       "status": "ready",
-      "description": "Original CNN shipped with the project. Retrain with the upgraded pipeline and register the new model for improved accuracy.",
+      "description": "Original demonstration CNN shipped with the project. Known to overfit (train accuracy 0.98, validation accuracy 0.72). Its label space is exactly 4 classes; tumor types outside {glioma, meningioma, no_tumor, pituitary_tumor} (for example brain metastases) are unrecognized, and out-of-distribution inputs can be misclassified with high nominal probability.",
       "is_active": true
     }
   ]

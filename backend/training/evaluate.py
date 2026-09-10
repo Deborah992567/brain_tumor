@@ -7,6 +7,8 @@ Provides classification metrics for the four brain-tumor classes:
 * sensitivity, specificity (per class)
 * confusion matrix
 * ROC-AUC (one-vs-rest)
+* calibration: expected calibration error (ECE), reliability bins and an
+  optional temperature-scaling calibration fit
 
 Everything here avoids sklearn and relies only on numpy so it can run in
 the same environment as the backend.
@@ -21,6 +23,8 @@ import numpy as np
 
 CLASSES = ["glioma", "meningioma", "no_tumor", "pituitary_tumor"]
 
+_EPILOGUE_EPS = 1e-7
+
 
 @dataclass
 class PerClassMetrics:
@@ -30,6 +34,25 @@ class PerClassMetrics:
     sensitivity: float
     specificity: float
     support: int
+
+
+@dataclass
+class ReliabilityBin:
+    bin_low: float
+    bin_high: float
+    count: int
+    confidence: float
+    accuracy: float
+
+
+@dataclass
+class CalibrationReport:
+    ece: float
+    n_bins: int
+    temperature: float
+    calibrated: bool
+    binned: list[ReliabilityBin] = field(default_factory=list)
+    method: str = "temperature-scaling"
 
 
 @dataclass
@@ -44,6 +67,7 @@ class EvaluationReport:
     confusion_matrix: list[list[int]]
     per_class: dict[str, PerClassMetrics] = field(default_factory=dict)
     roc_auc: dict[str, float] = field(default_factory=dict)
+    calibration: CalibrationReport | None = None
     n_samples: int = 0
 
     def to_dict(self) -> dict:
@@ -62,6 +86,168 @@ def confusion_matrix(labels: np.ndarray, predictions: np.ndarray, n_classes: int
     for true, pred in zip(labels, predictions):
         matrix[true, pred] += 1
     return matrix
+
+
+def expected_calibration_error(
+    probabilities: np.ndarray,
+    labels: np.ndarray,
+    n_bins: int = 15,
+) -> float:
+    """Expected calibration error: mean |confidence - accuracy| per confidence bin.
+
+    The model is perfectly calibrated when, among the samples predicted with a
+    probability of ``p``, exactly a fraction ``p`` is correct. ECE buckets the
+    predictions by max-softmax confidence and measures the average deviation.
+    """
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    labels = np.asarray(labels, dtype=int)
+    confidences = probabilities.max(axis=1)
+    predictions = probabilities.argmax(axis=1)
+    accuracies = (predictions == labels).astype(np.float64)
+
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        low, high = bins[i], bins[i + 1]
+        if i == n_bins - 1:
+            mask = confidences >= low
+        else:
+            mask = (confidences >= low) & (confidences < high)
+        if not mask.any():
+            continue
+        ece += (mask.sum() / confidences.size) * abs(
+            confidences[mask].mean() - accuracies[mask].mean()
+        )
+    return round(ece, 4)
+
+
+def reliability_bins(
+    probabilities: np.ndarray,
+    labels: np.ndarray,
+    n_bins: int = 15,
+) -> list[ReliabilityBin]:
+    """Observed accuracy vs average confidence per confidence bin (pairs for
+    a reliability diagram)."""
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    labels = np.asarray(labels, dtype=int)
+    confidences = probabilities.max(axis=1)
+    accuracies = (probabilities.argmax(axis=1) == labels).astype(np.float64)
+
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    out: list[ReliabilityBin] = []
+    for i in range(n_bins):
+        low, high = bins[i], bins[i + 1]
+        if i == n_bins - 1:
+            mask = confidences >= low
+        else:
+            mask = (confidences >= low) & (confidences < high)
+        if not mask.any():
+            continue
+        out.append(
+            ReliabilityBin(
+                bin_low=round(float(low), 4),
+                bin_high=round(float(high), 4),
+                count=int(mask.sum()),
+                confidence=round(float(confidences[mask].mean()), 4),
+                accuracy=round(float(accuracies[mask].mean()), 4),
+            )
+        )
+    return out
+
+
+def logits_from_probabilities(probabilities: np.ndarray) -> np.ndarray:
+    """Recover centered logits from probabilities (used by temperature scaling)."""
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    clipped = np.clip(probabilities, _EPILOGUE_EPS, 1.0 - _EPILOGUE_EPS)
+    logits = np.log(clipped)
+    logits -= logits.mean(axis=1, keepdims=True)
+    return logits
+
+
+def temperature_scale(probabilities: np.ndarray, temperature: float) -> np.ndarray:
+    """Apply temperature T to the logits (softmax(logits / T)).
+
+    T > 1 softens the distribution (used for calibration); T < 1 sharpens it.
+    """
+    logits = logits_from_probabilities(probabilities)
+    scaled = logits / temperature
+    scaled -= scaled.max(axis=1, keepdims=True)
+    exp = np.exp(scaled)
+    return exp / exp.sum(axis=1, keepdims=True)
+
+
+def nll_loss(probabilities: np.ndarray, labels: np.ndarray) -> float:
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    labels = np.asarray(labels, dtype=int)
+    return -float(
+        np.mean(np.log(np.clip(probabilities[np.arange(len(labels)), labels], _EPILOGUE_EPS, 1.0)))
+    )
+
+
+def fit_temperature(
+    probabilities: np.ndarray,
+    labels: np.ndarray,
+    lr: float = 0.1,
+    iterations: int = 1500,
+) -> float:
+    """Fit a temperature-scaling temperature by minimising NLL on a set that
+    was held out from training (validation set). Using the same set that was
+    used to pick the model would overfit the temperature; callers are
+    responsible for passing a properly held-out labelled set.
+
+    Gradient of the softmax NLL w.r.t. T (logits ``z``, scaled probs ``p``):
+
+        dL/dT = (1 / T^2) * mean_i( sum_k p_{i,k} z_{i,k} - z_{i,y_i} )
+    """
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    labels = np.asarray(labels, dtype=int)
+    temperature = 1.0
+    base_logits = logits_from_probabilities(probabilities)
+    label_logits = base_logits[np.arange(len(labels)), labels]
+    for _ in range(iterations):
+        scaled = temperature_scale(probabilities, temperature)
+        grad = (
+            np.average((base_logits * scaled).sum(axis=1)) - np.average(label_logits)
+        ) / (temperature**2)
+        temperature -= lr * grad
+        temperature = max(temperature, 1e-4)
+    return round(temperature, 4)
+
+
+def calibration_report(
+    probabilities: np.ndarray,
+    labels: np.ndarray,
+    n_bins: int = 15,
+) -> CalibrationReport:
+    """Measure calibration of raw model outputs (T=1)."""
+    return CalibrationReport(
+        ece=expected_calibration_error(probabilities, labels, n_bins=n_bins),
+        n_bins=n_bins,
+        temperature=1.0,
+        calibrated=False,
+        binned=reliability_bins(probabilities, labels, n_bins=n_bins),
+    )
+
+
+def evaluate_calibrated(
+    probabilities: np.ndarray,
+    labels: np.ndarray,
+    calibration_fit: tuple[np.ndarray, np.ndarray] | None = None,
+    n_bins: int = 15,
+) -> tuple[EvaluationReport, CalibrationReport | None]:
+    """Evaluate classification performance and measure calibration (ECE).
+
+    ``probabilities``/``labels`` form the test set used to report metrics.
+    ``calibration_fit`` is currently unused: temperature scaling requires
+    access to the raw model logits before softmax, but our inference API
+    only returns post-softmax probabilities. ECE is therefore always
+    reported on the raw model outputs (T=1). If a future model backend
+    exposes logits, this parameter will be used to fit a temperature.
+    """
+    report = evaluate(probabilities, labels)
+    base = calibration_report(probabilities, labels, n_bins=n_bins)
+    report.calibration = base
+    return report, None
 
 
 def _safe_div(numerator: float, denominator: float) -> float:

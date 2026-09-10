@@ -1,9 +1,9 @@
-"""Image preprocessing.
+"""Image preprocessing for inference.
 
-Preprocessing must match the preprocessing used during training. The legacy
-model was trained with ``ImageDataGenerator(rescale=1./255)`` on images loaded
-at ``target_size=(64, 64)`` (PIL bilinear resizing, RGB). This service
-reproduces that procedure for any registered model.
+The canonical preprocessing pipeline lives in :mod:`app.core.preprocessing`
+and is shared verbatim with the training pipeline. This service layers file
+opening and the batched ``PreparedImage`` on top of it, so inference always
+feeds the model the exact transformation it was trained with.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
+from app.core.preprocessing import add_batch_dimension, preprocess_image
+from app.services.errors import ValidationError
 from app.services.errors import ValidationError
 
 PIL_LOAD_ERROR_HINT = (
@@ -42,12 +44,15 @@ def open_image_from_bytes(data: bytes) -> Image.Image:
 
 
 def normalize_image(image: Image.Image, width: int, height: int) -> np.ndarray:
-    """Convert to RGB, resize and rescale to [0, 1] exactly like training."""
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    image = image.resize((width, height), Image.Resampling.BILINEAR)
-    array = np.asarray(image, dtype=np.float32)
-    return array / 255.0
+    """RGB, bilinear resize and ``1/255`` rescale — the canonical pipeline.
+
+    The model input is always square; ``prepare_image`` passes equal width and
+    height. Non-square sizes fall back to the size derived from ``input_size``.
+    """
+    if width == height and width > 0:
+        return preprocess_image(image, width)
+    size = max(width, height) or 64
+    return preprocess_image(image, size)
 
 
 def prepare_image(data: bytes, input_size: int = 64) -> PreparedImage:
@@ -55,8 +60,7 @@ def prepare_image(data: bytes, input_size: int = 64) -> PreparedImage:
     width, height = image.size
     rgb = image.convert("RGB") if image.mode != "RGB" else image
     display = np.asarray(rgb, dtype=np.uint8)
-    tensor = normalize_image(image, input_size, input_size)
-    tensor = np.expand_dims(tensor, axis=0)
+    tensor = add_batch_dimension(normalize_image(image, input_size, input_size))
     return PreparedImage(
         tensor=tensor,
         array_rgb=display,

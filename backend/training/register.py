@@ -20,12 +20,15 @@ def register_model(
     architecture: str,
     file_path: str,
     input_size: int,
+    preprocessing_version: str,
     dataset_version: str,
     metrics: dict,
     status: str = "ready",
     description: str = "",
+    calibration: dict | None = None,
     set_active: bool = False,
     registry_path: Path | None = None,
+    training_datetime: str | None = None,
 ) -> None:
     path = registry_path or REGISTRY_PATH
     if path.exists():
@@ -50,9 +53,17 @@ def register_model(
             "architecture": architecture,
             "file_path": file_path,
             "input_size": input_size,
+            "preprocessing_version": preprocessing_version,
             "dataset_version": dataset_version,
-            "training_datetime": datetime.now(timezone.utc).isoformat(),
+            "training_datetime": training_datetime
+            or datetime.now(timezone.utc).isoformat(),
             "metrics": metrics,
+            "calibration": calibration
+            or {
+                "applied": False,
+                "temperature": 1.0,
+                "ece_after": None,
+            },
             "status": status,
             "description": description,
             "is_active": set_active,

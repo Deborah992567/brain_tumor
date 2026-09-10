@@ -1,14 +1,14 @@
-"""tf.data augmentation pipeline.
+"""tf.data feeding pipeline.
 
 The legacy model was trained with ``ImageDataGenerator(rescale=1/255)`` with
-shear/zoom/flip augmentation. This pipeline reproduces the same rescaling (so
-inference preprocessing stays identical) and adds gentle, well-understood
-geometric augmentation to reduce overfitting:
+shear/zoom/flip augmentation. The canonical preprocessing (RGB -> bilinear
+resize -> ``1/255``) lives in ``app.core.preprocessing`` and is applied here
+identically to the inference service, guaranteeing the model sees the same
+input distribution in both paths. Small, clinically-defensible augmentations
+are applied on top of it after normalisation:
 
 * random left/right flip (axial-flip safe for MRIs)
 * random brightness/contrast jitter
-* small random rotation
-* normalisation to [0, 1]
 
 Brightness/contrast jitter is kept small because MR intensity ranges carry
 real diagnostic signal.
@@ -16,7 +16,10 @@ real diagnostic signal.
 
 from __future__ import annotations
 
+import numpy as np
 import tensorflow as tf
+
+from app.core.preprocessing import preprocess_pixels
 
 
 def _augment_train(image: tf.Tensor, label: tf.Tensor):
@@ -36,11 +39,16 @@ def feature_pipeline(
     seed: int = 42,
 ):
     def _make(im, lab):
-        im = tf.image.resize(im, (input_size, input_size), method="bilinear")
-        im = tf.cast(im, tf.float32) / 255.0
-        return im, lab
+        scaled = tf.numpy_function(
+            lambda arr: preprocess_pixels(arr, input_size),
+            [im],
+            tf.float32,
+            name="canonical_preprocess",
+        )
+        scaled.set_shape((input_size, input_size, 3))
+        return scaled, lab
 
-    ds = tf.data.Dataset.from_tensor_slices((arrays.astype("float32"), labels.astype("int32")))
+    ds = tf.data.Dataset.from_tensor_slices((arrays.astype("uint8"), labels.astype("int32")))
     if shuffle_buffer:
         ds = ds.shuffle(shuffle_buffer, seed=seed, reshuffle_each_iteration=True)
     ds = ds.map(_make, num_parallel_calls=tf.data.AUTOTUNE)
@@ -51,7 +59,6 @@ def feature_pipeline(
 
 
 def normalize_array(array, input_size: int) -> tf.Tensor:
-    """Normalise a single HWC array to the (1, size, size, 3) tensor the model uses."""
-    image = tf.image.resize(array, (input_size, input_size), method="bilinear")
-    image = tf.cast(image, tf.float32) / 255.0
-    return tf.expand_dims(image, axis=0)
+    """Normalise a single HWC array using the shared canonical preprocessing."""
+    tensor = preprocess_pixels(array, input_size)
+    return tf.expand_dims(tf.convert_to_tensor(tensor, dtype=tf.float32), axis=0)

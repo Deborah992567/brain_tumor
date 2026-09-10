@@ -18,6 +18,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from app.core.preprocessing import resize_rgb
+
 CLASS_ALIASES = {
     "glioma": "glioma",
     "meningioma": "meningioma",
@@ -85,9 +87,7 @@ def load_images(
         for f in files:
             try:
                 with Image.open(f) as im:
-                    img = im.convert("RGB").resize(
-                        (input_size, input_size), Image.Resampling.BILINEAR
-                    )
+                    img = resize_rgb(im, input_size)
                     arrays.append(np.asarray(img, dtype=np.uint8))
                     ys.append(labels.index(label))
                     counts[label] = counts.get(label, 0) + 1
