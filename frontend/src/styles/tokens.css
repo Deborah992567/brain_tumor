@@ -1,0 +1,98 @@
+/* ===========================================================================
+   Brain Tumor AI — design tokens (solid colors only, no gradients)
+   =========================================================================== */
+
+:root {
+  --font-sans: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --surface-3: #e7ebf1;
+  --border: #dde3ea;
+  --border-strong: #c7d0da;
+  --overlay: rgba(15, 23, 42, 0.45);
+
+  --text: #17202b;
+  --text-muted: #5b6673;
+  --text-faint: #8a94a3;
+
+  --primary: #0f766e;
+  --primary-strong: #0b5d57;
+  --primary-soft: #e4f0ee;
+  --on-primary: #ffffff;
+
+  --success: #0b7a4b;
+  --success-soft: #e2f2ea;
+  --warning: #a15c07;
+  --warning-soft: #faf0dd;
+  --danger: #b42318;
+  --danger-soft: #fbeae8;
+  --info: #1d4ed8;
+  --info-soft: #e7edfe;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.07);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+  --space-10: 64px;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 15px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 30px;
+
+  --focus-ring: 0 0 0 3px rgba(15, 118, 110, 0.25);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #0b111c;
+  --surface: #111a2b;
+  --surface-2: #16213a;
+  --surface-3: #1b2742;
+  --border: #24314e;
+  --border-strong: #33436b;
+  --overlay: rgba(3, 7, 18, 0.62);
+
+  --text: #e7ecf4;
+  --text-muted: #9aa8c3;
+  --text-faint: #64748f;
+
+  --primary: #2dd4bf;
+  --primary-strong: #5eead4;
+  --primary-soft: rgba(45, 212, 191, 0.14);
+  --on-primary: #062826;
+
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
+
+  --focus-ring: 0 0 0 3px rgba(45, 212, 191, 0.35);
+
+  color-scheme: dark;
+}
