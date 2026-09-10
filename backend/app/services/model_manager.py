@@ -36,10 +36,13 @@ def _datetime_parse(value):
 
 
 class ModelManager:
+    # Backend instances are shared across ModelManager instances so the model
+    # is loaded once and reused for every prediction.
+    _backends: dict[str, ModelBackend] = {}
+    _backends_lock = threading.Lock()
+
     def __init__(self) -> None:
         self._registry_path: Path = settings.registry_path
-        self._backends: dict[str, ModelBackend] = {}
-        self._backends_lock = threading.Lock()
 
     # ---- registry file -------------------------------------------------
 
