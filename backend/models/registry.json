@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "Brain Tumor CNN",
+      "version": "1.0.0",
+      "architecture": "Custom CNN (Conv2D x2 + MaxPool + Dense)",
+      "file_path": "brain_tumor.h5",
+      "input_size": 64,
+      "dataset_version": "legacy Training/Testing (2870 train, 393 test images, 4 classes)",
+      "training_datetime": null,
+      "metrics": {
+        "source": "training-time (recorded in legacy notebook, not independently re-verified)",
+        "train_accuracy": 0.9847,
+        "val_accuracy": 0.7176,
+        "val_loss": 4.0798
+      },
+      "status": "ready",
+      "description": "Original CNN shipped with the project. Retrain with the upgraded pipeline and register the new model for improved accuracy.",
+      "is_active": true
+    }
+  ]
+}
