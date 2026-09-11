@@ -115,6 +115,7 @@ def main() -> None:
         epochs=args.epochs,
         callbacks=callbacks,
         class_weight=train_full.class_weights,
+        verbose=1,
     )
 
     if args.fine_tune_epochs > 0 and args.arch != "custom_cnn":
@@ -130,6 +131,7 @@ def main() -> None:
             train_ds_feed, validation_data=val_ds_feed,
             epochs=args.fine_tune_epochs, callbacks=callbacks,
             class_weight=train_full.class_weights,
+            verbose=1,
         )
 
     output_path = args.output or DEFAULT_DIR / f"{args.result_name}.keras"

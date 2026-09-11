@@ -54,6 +54,9 @@ class CalibrationReport:
     binned: list[ReliabilityBin] = field(default_factory=list)
     method: str = "temperature-scaling"
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 @dataclass
 class EvaluationReport:
