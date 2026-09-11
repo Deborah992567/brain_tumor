@@ -5,13 +5,24 @@ training-pipeline models. Files are produced by:
 
 ```bash
 cd backend
+
+# Artifact facts (architecture, params, latency) — no dataset required:
+python -m training.run_evaluation \
+  --model-path models/<model>.h5 \
+  --label "<label>"
+
+# Full held-out evaluation — requires a labelled dataset:
 python -m training.run_evaluation \
   --model-path models/<model>.h5 \
   --data-root /path/to/labelled/dataset \
-  --input-size 64 \
-  --output ../reports/model-evaluation/<artifact>.json \
   --label "<label>"
+
+# Dataset manifest / audit (no TensorFlow needed):
+python -m training.make_manifest --data-root /path/to/labelled/dataset
 ```
+
+See the repository `README.md` → *Evaluation tooling* for the full workflow
+(dataset audit, deterministic splits, ECE, OOD/abstention evaluation).
 
 ## What the bundled model (v1.0.0) can validate
 

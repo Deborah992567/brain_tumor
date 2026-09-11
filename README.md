@@ -11,21 +11,56 @@ generates a printable PDF report.
 
 ---
 
-## Purpose
+## What this application is for
 
-- Classify a single axial, coronal or sagittal brain MRI scan across four classes.
-- Show the **full probability distribution**, not only the top guess. Numbers are
-  presented honestly as **model probabilities** — never as clinical confidence — and
-  flagged as **classification unavailable** below a 60% trust threshold (abstention),
-  or when the image is outside the model's 4-class label space.
-- Explain the model's reasoning with an **AI attention visualization** (Grad-CAM),
-  explicitly labeled as attention — never as tumor segmentation.
-- Persist every analysis with exact model version, inputs, outputs and timing for
-  full auditability.
-- Generate a professional **PDF report** per analysis.
-- Provide a training pipeline (with a single shared preprocessing pipeline and
-  calibration metrics) to replace the demonstration model with a properly
-  validated model.
+**Brain Tumor AI** is a self-hosted web application for *AI-assisted review of brain
+MRI scans* in a research and education setting. An operator uploads a single axial,
+coronal or sagittal brain MRI image and the app:
+
+- runs a convolutional neural network that classifies it across the four supported
+  classes — **glioma**, **meningioma**, **no tumor** and **pituitary tumor** — and
+  returns the **full probability vector**, never just the top guess;
+- explains the model's decision with a Grad-CAM **attention overlay** (which regions
+  of the image drove the prediction), explicitly labeled as attention, never as tumor
+  segmentation;
+- generates a concise, printable **PDF report** with the probabilities, the attention
+  map and a medical disclaimer;
+- persists every analysis with the exact model version, inputs, outputs and processing
+  time for a fully auditable record.
+
+The application is designed to be **honest by construction**:
+
+- probabilities are presented as *model probabilities*, never clinical confidence;
+- results below a 60% model-probability threshold are marked **classification
+  unavailable** (abstention) instead of being presented as a decision;
+- the UI, API and reports always state the model's **supported label space**, so an
+  out-of-label-space image (e.g. a brain metastasis) is not taken as a confident
+  diagnosis;
+- the bundled model's training-time metrics are labeled as such and never claimed as
+  clinical performance.
+
+Beyond inference, the repository ships reproducible **training and evaluation tooling**
+so the demonstration model can be replaced with a properly validated one: one shared
+preprocessing pipeline, deterministic dataset audits and splits, calibration (ECE) and
+out-of-distribution evaluation, and JSON/PNG artifacts that state explicitly what could
+and could not be measured (see [Evaluation tooling](#evaluation-tooling)).
+
+### Who it is for
+
+- **Researchers and ML engineers** retraining or replacing the model — the training
+  pipeline, dataset audit, split tooling and evaluation CLIs are designed for them.
+- **Radiology trainees and educators** studying model decisions — attention maps, the
+  probability view and the packaged case study in `reports/model-evaluation/`.
+- **Self-hosting administrators** — the whole stack (API + MariaDB) runs behind
+  Docker Compose with sensible defaults.
+
+### What it is *not*
+
+- A diagnostic or clinical device. Reports are for research and education only and do
+  not replace professional radiology reports.
+- A general tumor detector. The label space is exactly four classes; other tumor types
+  are unrecognized and may be pushed toward a wrong class with a high nominal
+  probability.
 
 ## Key features
 
@@ -49,11 +84,11 @@ The application is honest about what its model can and cannot do:
   metastases**) are *not* part of the label space, and an external image of such a
   lesion can be pushed to a high nominal probability for a wrong class. The UI and PDF
   report state the supported classes explicitly.
-- **Calibration.** Raw softmax outputs are **not calibrated**; the expected calibration
-  error (ECE) is only measurable on a labelled held-out set, which is not bundled with
-  the repository. The evaluation tooling (`training.run_evaluation`) computes ECE and
-  reliability bins, and fits a temperature-scaling temperature on a separate held-out
-  set when a `Validation/` folder is provided.
+- **Calibration.** Raw softmax outputs are **not calibrated** — the inference API
+  returns post-softmax probabilities (not logits), so ECE is always measured on raw
+  outputs at T=1. The evaluation tooling (`training.run_evaluation`) computes ECE and
+  reliability bins on a held-out set and carves a deterministic validation split from
+  `Training/` for model selection; it does not fit a temperature.
 - **Single preprocessing source of truth.** Training and inference share one canonical
   pipeline — RGB conversion, PIL bilinear resize to the model input size, `float32`
   scaling by `1/255` — defined in `app/core/preprocessing.py` and stamped into the
@@ -67,6 +102,92 @@ The application is honest about what its model can and cannot do:
 > bundled `Brain Tumor CNN` is a small demonstration network (train accuracy 0.98 /
 > validation accuracy 0.72 from the legacy notebook); these are **not** claimed as
 > clinical performance and have not been re-verified on this repository's data.
+
+## Evaluation tooling
+
+All evaluation runs from the `backend/` directory and writes JSON + PNG artifacts
+under `reports/model-evaluation/`. The tools are honest by design: when a required
+labelled dataset is absent they say so explicitly and produce `metrics: null` rather
+than inventing numbers.
+
+### Dataset manifest and audit
+
+```bash
+cd backend
+python -m training.make_manifest --data-root /path/to/dataset
+```
+
+Scans the Kaggle-style layout (`Training/` and `Testing/` class folders) and reports,
+with no TensorFlow dependency:
+
+- per-class image counts, dimensions, formats and color modes;
+- **corrupt/unreadable files**;
+- **exact duplicates** (file SHA-256) and **perceptually near-duplicate images**
+  (8×8 average hash), including cross-split and cross-class duplicates;
+- **cross-split leakage** — hashes seen in more than one split;
+- **unknown class folders** (e.g. a `metastasis/` directory) flagged explicitly so new
+  diagnoses are never silently mapped into the four supported classes;
+- **patient/study identifiers** extracted from filenames (configurable regex) and how
+  many images could / could not be grouped for patient-level leakage checks.
+
+Without `--data-root` the tool writes a manifest with `dataset_present: false` and
+states exactly why.
+
+### Deterministic, leakage-checkable splits
+
+`backend/training/data.py` provides:
+
+- `reproducible_split` — class-stratified train/validation/test split; the same `seed`
+  always yields the same partition (used by the evaluation CLIs).
+- `group_stratified_split` — patient/study-independent split: whole groups (patient or
+  study IDs) are each assigned to exactly one split.
+- `partition_overlap` — checks raw-file and resized-pixel hashes for content appearing
+  in more than one split (catches identical and re-encoded copies).
+
+### Model evaluation (spec always, metrics only when a dataset is available)
+
+```bash
+# 1. Artifact facts + inference latency — no dataset required:
+python -m training.run_evaluation --model-path models/<model>.h5 --label "model-spec"
+
+# 2. Full held-out evaluation — requires a labelled dataset:
+python -m training.run_evaluation --model-path models/<model>.h5 \
+  --data-root /path/to/dataset --label "held-out v1.0.0"
+```
+
+- **Always recorded** (measured from the model file itself): architecture, parameter
+  count, weight layers, input/output shapes, file size, Keras version and median
+  single-image inference latency.
+- **Only when `--data-root` is supplied** (must contain `Training/` and `Testing/`):
+  accuracy/precision/recall/F1, per-class sensitivity/specificity, confusion matrix,
+  ROC-AUC and **expected calibration error (ECE)** with reliability bins. A
+  validation split for model selection / held-out calibration checks is carved
+  deterministically from `Training/` (`--val-fraction`, `--split-seed`). Raw softmax
+  outputs remain uncalibrated (the inference API returns post-softmax probabilities,
+  not logits).
+- Deterministic **PNG charts** (confusion matrix + reliability diagram) are written next
+  to the JSON artifact (`--no-charts` to skip).
+
+### Out-of-distribution / abstention evaluation
+
+```bash
+python -m training.run_ood_evaluation \
+  --model-path models/<model>.h5 \
+  --id-root  /path/to/in-distribution   # 4 supported classes
+  --ood-root /path/to/out-of-distribution # any images: unsupported tumors, non-MRI...
+```
+
+Reports MSP / entropy score distributions and the AUROC that measures how well each
+score separates the ID set from the OOD set, plus abstention rates (the 60% rule in
+`app/core/constants.py`) on both sets. Without `--ood-root` it reports ID statistics
+and states that separation could not be measured.
+
+### Artifacts
+
+`reports/model-evaluation/` contains the generated manifests and evaluation JSONs
+plus a README that documents the bundled model's limitations and a worked
+out-of-label-space case study (external T1-contrast metastasis pushed to
+`No Tumor 0.9972`).
 
 ## Architecture
 
@@ -91,9 +212,11 @@ Components:
   - `app/services` — errors, validation, preprocessing, inference, explainability,
     reporting, model management.
   - `app/db` — SQLAlchemy models and SQLite/MariaDB session management.
-- `backend/training` — dataset loading, stratified split, augmentation, architectures,
-  training orchestrator, calibration/ECE evaluation, `run_evaluation` CLI and registry
-  registration.
+- `backend/training` — dataset loading, hashing and deterministic/reproducible splits,
+  augmentation, architectures, training orchestrator, calibration/ECE evaluation,
+  dataset audit + manifest (`make_manifest`), model-spec and held-out evaluation
+  (`run_evaluation`), OOD/abstention evaluation (`run_ood_evaluation`), deterministic
+  PNG charting, and registry registration.
 - `frontend/src` — React pages, API client, theme provider, UI primitives.
 
 ## Tech stack
@@ -117,7 +240,7 @@ backend/
     services/     business logic
     main.py       FastAPI application
   models/         model weights + registry.json
-  training/       dataset/training/evaluation pipeline
+  training/       dataset/training/evaluation pipeline (splits, audit, OOD, evaluation)
   tests/          pytest suite (66 tests)
 frontend/
   src/
@@ -195,38 +318,57 @@ paint to avoid flashing. The design system uses **solid colors only — no gradi
 
 ## Training a replacement model
 
-The dataset (`Training/`, `Testing/` class folders) is not distributed with this repo.
-When available, use the pipeline — it uses the exact same canonical preprocessing as
-inference and records calibration metrics:
+The labelled dataset (`Training/`, `Testing/` class folders) is **not** distributed
+with this repo. When one is available, this is the full honest workflow. Everything
+uses the exact same canonical preprocessing as inference
+(`app/core/preprocessing.py`), and every artifact states precisely what was measured.
+
+### 1. Audit and inspect the dataset
 
 ```bash
 cd backend
+python -m training.make_manifest --data-root /path/to/dataset \
+  --split-seed 42 --val-fraction 0.15 --test-fraction 0.15
+```
 
+Review `reports/model-evaluation/dataset-manifest.json` for unknown class folders,
+cross-split duplicates/leakage and how many images group into patients. Fix any leaks
+before training.
+
+### 2. Train
+
+```bash
 python -m training.train --data-dir /path/to/dataset \
   --arch custom_cnn --epochs 40 --batch-size 32 \
   --register --set-active
 ```
 
 Architectures: `custom_cnn`, `efficientnet_b0`, `resnet50`, `mobilenet_v2`,
-`densenet121`. The orchestrator writes honest metrics (including ECE and a temperature
-fit from the held-out validation split) to the registry; it never fakes numbers.
+`densenet121`. The orchestrator writes honest metrics — including ECE measured on the
+held-out `Testing/` set — to the registry; it never fakes numbers. Argument reference:
+`python -m training.train --help`.
 
-Evaluate any trained artifact against a labelled `Testing/` set with the dedicated CLI,
-which writes a comparable JSON artifact under `reports/model-evaluation/`:
+### 3. Held-out evaluation
 
 ```bash
-cd backend
-
-python -m training.run_evaluation \
-  --model-path models/brain_tumor.h5 \
-  --data-root /path/to/dataset \
-  --input-size 64 \
-  --output ../reports/model-evaluation/ev-1.0.0.json \
-  --label "v1.0.0 held-out"
+python -m training.run_evaluation --model-path models/<model>.h5 \
+  --data-root /path/to/dataset --label "held-out"
 ```
 
-If a `Validation/` folder is present it is used to fit a temperature before reporting
-the post-calibration ECE; otherwise only the uncalibrated ECE is reported.
+Writes `reports/model-evaluation/<name>.json` with metrics + ECE and deterministic
+confusion-matrix / reliability-diagram PNGs. To record model-spec facts (params,
+latency, shapes) without any dataset, simply omit `--data-root`.
+
+### 4. Out-of-distribution behavior
+
+```bash
+python -m training.run_ood_evaluation --model-path models/<model>.h5 \
+  --id-root /path/to/in-distribution \
+  --ood-root /path/to/unsupported-or-non-mri-images
+```
+
+Confirms whether the model's probabilities actually separate supported from unsupported
+images before it is trusted in front of users.
 
 ## API reference (all under `/api/v1`)
 
