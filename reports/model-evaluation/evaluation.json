@@ -1,0 +1,40 @@
+{
+  "label": "2.0.0 model-spec",
+  "kind": "model-spec-only",
+  "recorded_at": "2026-09-11T00:46:24.020374+00:00",
+  "model": {
+    "architecture_hint": "sequential_1",
+    "parameter_count": 813604,
+    "weight_layers": 7,
+    "input_shape": [
+      null,
+      64,
+      64,
+      3
+    ],
+    "output": {
+      "shape": [
+        null,
+        4
+      ],
+      "classes": 4
+    },
+    "file_size_bytes": 9808936,
+    "keras_version": "3.15.1"
+  },
+  "latency_ms": {
+    "repeats": 5,
+    "median_ms": 32.07,
+    "min_ms": 28.05,
+    "max_ms": 34.76,
+    "platform_note": "Measured locally; latency depends on hardware and backend and is reported only for reproducibility context."
+  },
+  "preprocessing_version": "1.0.0-255-bilinear-rgb",
+  "dataset": {
+    "found": false,
+    "note": "No labelled dataset is present in this repository. Performance metrics are therefore not reported. Run this CLI with --data-root once labelled Training/ and Testing/ folders are available."
+  },
+  "metrics": null,
+  "calibration": null,
+  "artifacts": []
+}

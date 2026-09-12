@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: brain-tumor-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://brain_tumor:${MYSQL_PASSWORD:-change-me}@db:3306/brain_tumor
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+      - ./backend/models:/app/backend/models
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:10.11
+    container_name: brain-tumor-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-change-me}
+      MARIADB_DATABASE: brain_tumor
+      MARIADB_USER: brain_tumor
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:
